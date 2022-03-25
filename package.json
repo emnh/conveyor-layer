@@ -1,0 +1,24 @@
+{
+  "name": "conveyor-layer",
+  "version": "1.0.0",
+  "description": "Conveyor Layer: A GPU based game",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "webpack": "webpack -w"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/emnh/conveyor-layer.git"
+  },
+  "author": "Eivind Magnus Hvidevold <hvidevold@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/emnh/conveyor-layer/issues"
+  },
+  "homepage": "https://github.com/emnh/conveyor-layer#readme",
+  "dependencies": {
+    "webpack": "^5.70.0",
+    "webpack-cli": "^4.9.2"
+  }
+}
