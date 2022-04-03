@@ -4,8 +4,10 @@ const THREE = require('three');
 
 const width = 100;
 const height = 100;
-const atlasWidth = 100;
-const atlasHeight = 100;
+const iconCount = 5;
+const iconSize = 50;
+const atlasWidth = iconSize * iconCount;
+const atlasHeight = iconSize;
 
 const generateMatrices = () => {
 	const matrices = [[], []];
@@ -74,6 +76,10 @@ const display = function(matrix, texture2) {
 	texture.needsUpdate = true;
 	texture.magFilter = THREE.NearestFilter;
 	texture.minFilter = THREE.NearestFilter;
+	texture2.magFilter = THREE.LinearMipMapLinearFilter;
+	texture2.minFilter = THREE.LinearFilter;
+	texture2.wrapS = THREE.ClampToEdgeWrapping;
+	texture2.wrapT = THREE.ClampToEdgeWrapping;
 
 	// Add a plane to the scene showing the data texture
 	const geometry = new THREE.PlaneGeometry(renderWidth, renderHeight, 1, 1);
@@ -86,10 +92,11 @@ const display = function(matrix, texture2) {
 			map: { value: texture, needsUpdate: true },
 			map2: { value: texture2, needsUpdate: true },
 			mapres: { value: new THREE.Vector2(width, height), needsUpdate: true },
+			atlasres: { value: new THREE.Vector2(atlasWidth, atlasHeight), needsUpdate: true },
 			res: { value: new THREE.Vector2(renderWidth, renderHeight), needsUpdate: true },
-			iconsize: { value: new THREE.Vector2(48.0 / atlasWidth, 48.0 / atlasHeight), needsUpdate: true },
+			iconsize: { value: new THREE.Vector2(iconSize / atlasWidth, iconSize / atlasHeight), needsUpdate: true },
 			cellsize: { value: new THREE.Vector2(cellWidth, cellHeight), needsUpdate: true },
-			iconcount: { value: 4, needsUpdate: true },
+			iconcount: { value: iconCount, needsUpdate: true },
 		},
 		vertexShader: `
 			varying vec2 vUv;
@@ -104,6 +111,7 @@ const display = function(matrix, texture2) {
 			uniform float scale;
 			uniform vec2 offset;
 			uniform vec2 mapres;
+			uniform vec2 atlasres;
 			uniform vec2 res;
 			uniform vec2 iconsize;
 			uniform vec2 cellsize;
@@ -116,9 +124,10 @@ const display = function(matrix, texture2) {
 				vec2 pixindex = floor(mapped) + vec2(0.5) + offset;
 				vec2 pixoffset = fract(mapped);
 				vec4 pix = texture2D(map, pixindex / mr);
-				int iconindex = int(floor(pix.x)) % int(iconcount);
+				int iconindex = int(floor(pix.x * iconcount)); // % int(iconcount);
 				vec2 xy = vec2(iconindex, 0.0) * iconsize + pixoffset * iconsize;
 				xy.y = 1.0 - xy.y;
+				xy = (floor(xy * atlasres) + vec2(0.5))/ atlasres;
 				vec4 rgba = texture2D(map2, xy);
 				gl_FragColor = rgba;
 			}
@@ -218,18 +227,19 @@ const loadImages = function() {
 		var canvas = document.createElement('canvas');
 		canvas.width = atlasWidth;
 		canvas.height = atlasHeight;
-		canvas.style = "display: none;";
+		// canvas.style = "display: none;";
 		document.body.appendChild(canvas);
 		var ctx = canvas.getContext('2d');
-		ctx.font = '48px serif';
+		ctx.font = '50px serif';
+		const y = 45;
 		// Right arrow
-		ctx.fillText('\u25B6', 0, 40);
+		ctx.fillText('\u25B6', iconSize * 1, y);
 		// Left arrow
-		ctx.fillText('\u25C0', 48, 40);
+		ctx.fillText('\u25C0', iconSize * 2, y);
 		// Up arrow
-		ctx.fillText('\u25B2', 16, 0);
+		ctx.fillText('\u25B2', iconSize * 3, y);
 		// Down arrow
-		ctx.fillText('\u25BC', 16, 48);
+		ctx.fillText('\u25BC', iconSize * 4, y);
 		return canvas;
 	}
 	return new THREE.Texture(draw());
