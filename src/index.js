@@ -70,6 +70,24 @@ const display = function(matrix) {
 	const mesh = new THREE.Mesh(geometry, material);
 	scene.add(mesh);
 
+	let scale = 1;
+	const zoom = function(event) {
+		event.preventDefault();
+
+		scale += event.deltaY * -0.01;
+	  
+		// Restrict scale
+		scale = Math.min(Math.max(1.0, scale), 16);
+
+		console.log(scale);
+
+		renderer.setSize(width * scale, height * scale);
+		//mesh.scale = new THREE.Vector3(scale, scale, scale);
+	};
+
+	renderer.domElement.addEventListener('wheel', zoom);
+	document.body.addEventListener('wheel', zoom);
+
 	// Add a light to the scene
 	const light = new THREE.PointLight(0xffffff, 1, 0);
 	light.position.set(0, 0, 100);
