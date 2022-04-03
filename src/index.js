@@ -10,22 +10,24 @@ const iconSize = 50;
 const atlasWidth = iconSize * iconCount;
 const atlasHeight = iconSize;
 
+const C = {
+	empty: 0,
+	right: 1,
+	left: 2,
+	up: 3,
+	down: 4,
+};
+
 const generateMatrices = () => {
 	const matrices = [[], []];
 	for (let y = 0; y < height; y++){
 		matrices[0].push([]);
-		matrices[1].push([]);
 		for (let x = 0; x < width; x++){
-			const r = Math.random();
+			const r = Math.floor(Math.random() * iconCount);
 			const g = Math.random();
 			const b = Math.random();
 			const a = 1.0;
 			matrices[0][y].push([r, g, b, a]);
-			const r2 = Math.random();
-			const g2 = Math.random();
-			const b2 = Math.random();
-			const a2 = 1.0;
-			matrices[1][y].push([r2, g2, b2, a2]);
 		}
 	}
 	return matrices;
@@ -137,6 +139,85 @@ const getCalculate = function(gpu) {
 };
 // const calculate = getCalculate(gpu);
 
+const getCalculate2 = function() {
+	const idx = (x, y, i) => (y * width + x) * 4 + i;
+	const token = (x, y) => idx(x, y, 0);
+
+	const copy = function(a, b) {
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				for (let i = 0; i < 4; i++) {
+					b[idx(x, y, i)] = a[idx(x, y, i)];
+				}
+			}
+		}
+	};
+
+	const right = function(a) {
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				if (x - 1 >= 0 &&
+					a[idx(x, y, 0)] === C.empty &&
+					a[idx(x - 1, y, 0)] === C.right) {
+					a[idx(x, y, 0)] = a[idx(x - 1, y, 0)];
+					a[idx(x - 1, y, 0)] = 0;
+				}
+			}
+		}
+	};
+
+	const left = function(a) {
+		for (let y = 0; y < height; y++) {
+			for (let x = width - 1; x >= 0; x--) {
+				if (x + 1 < width &&
+					a[idx(x, y, 0)] === C.empty &&
+					a[idx(x + 1, y, 0)] === C.left) {
+					a[idx(x, y, 0)] = a[idx(x + 1, y, 0)];
+					a[idx(x + 1, y, 0)] = 0;
+				}
+			}
+		}
+	};
+
+	const up = function(a) {
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				if (y + 1 < height &&
+					a[idx(x, y, 0)] === C.empty &&
+					a[idx(x, y + 1, 0)] === C.up) {
+					a[idx(x, y, 0)] = a[idx(x, y + 1, 0)];
+					a[idx(x, y + 1, 0)] = 0;
+				}
+			}
+		}
+	};
+
+	const down = function(b) {
+		for (let y = height - 1; y >= 0; y--) {
+			for (let x = 0; x < width; x++) {
+				if (y - 1 >= 0 &&
+					b[idx(x, y, 0)] === C.empty &&
+					b[idx(x, y - 1, 0)] === C.down) {
+					b[idx(x, y, 0)] = b[idx(x, y - 1, 0)];
+					b[idx(x, y - 1, 0)] = 0;
+				}
+			}
+		}
+	};
+
+	const calculate = function(a) {
+		const b = new Float32Array(a.length);
+		copy(a, b);
+		right(b);
+		left(b);
+		up(b);
+		down(b);
+		return b;
+	};
+
+	return calculate;
+};
+
 const transfer = function(matrix, array) {
 	for (let y = 0; y < height; y++) {
 		for (let x = 0; x < width; x++) {
@@ -238,7 +319,8 @@ const display = function(matrix, texture2) {
 				vec2 pixindex = floor(mapped) + vec2(0.5) + offset;
 				vec2 pixoffset = fract(mapped);
 				vec4 pix = texture2D(map, pixindex / mr);
-				int iconindex = int(floor(pix.x * iconcount)); // % int(iconcount);
+				// int iconindex = int(floor(pix.x * iconcount)); // % int(iconcount);
+				float iconindex = pix.x;
 				vec2 xy = vec2(iconindex, 0.0) * iconsize + pixoffset * iconsize;
 				xy.y = 1.0 - xy.y;
 				xy = (floor(xy * atlasres) + vec2(0.5))/ atlasres;
@@ -248,13 +330,14 @@ const display = function(matrix, texture2) {
 		`
 	});
 
-	let m2 = matrix;
+	let m2 = array;
 	const gpuCanvas = document.createElement('canvas');
 	const gpu = new GPU({
 		canvas,
 		context: renderer.getContext()
 	});
-	calculate = getCalculate(gpu);
+	// calculate = getCalculate2(gpu);
+	calculate = getCalculate2();
 
 	const outputKernel =
 		gpu.createKernel(function(a) {
@@ -267,16 +350,20 @@ const display = function(matrix, texture2) {
 		}).setOutput([height, width]).setPipeline(); //.setGraphical(true);
 
 	const calcNext = function() {
+		console.log('calcNext');
 		m2 = calculate(m2);
 		// const array2 = m2[0][0].buffer;
-		const array2 = outputKernel(m2);
-		console.log(array2);
-		const texture3 = new THREE.DataTexture(array2, width, height, THREE.RGBAFormat, THREE.FloatType);
+		// const array2 = outputKernel(m2);
+		// console.log(array2);
+
+		// TODO: don't recreate the texture every frame
+		const texture3 = new THREE.DataTexture(m2, width, height, THREE.RGBAFormat, THREE.FloatType);
 		// transfer(m2, array);
 		// console.log(m2);
-		texture3.needsUpdate = true;
+		// texture3.needsUpdate = true;
 		material.uniforms.map = { value: texture3, needsUpdate: true };
-		// material.uniforms.map.needsUpdate = true;
+		material.uniforms.map.needsUpdate = true;
+		material.uniforms.map.value.needsUpdate = true;
 	};
 	setInterval(calcNext, 1000);
 
