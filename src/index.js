@@ -1,7 +1,8 @@
 const $ = require('jquery');
 const { GPU } = require('gpu.js');
-const THREE = require('three');
 
+const THREE = require('three');
+	
 const width = 100;
 const height = 100;
 const iconCount = 5;
@@ -28,6 +29,126 @@ const generateMatrices = () => {
 		}
 	}
 	return matrices;
+};
+
+const emptyMatrix = () => {
+	const matrix = [];
+	for (let y = 0; y < height; y++){
+		matrix.push([]);
+		for (let x = 0; x < width; x++){
+			const r = 0;
+			const g = 0;
+			const b = 0;
+			const a = 1.0;
+			matrix[y].push([r, g, b, a]);
+		}
+	}
+	return matrix;
+};
+
+const getCalculate = function(gpu) {
+	// const multiplyMatrix = gpu.createKernel(function(a, b) {
+	// 	let sum = 0;
+	// 	for (let i = 0; i < 512; i++) {
+	// 	  sum += a[this.thread.y][i] * b[i][this.thread.x];
+	// 	}
+	// 	return sum;
+	//   }).setOutput([width, height])
+
+	// a is previous generation, b is next generation
+	const calculateRight =
+		gpu.createKernel(function(a, b) {
+			// let current = a[this.thread.y][this.thread.x];
+			// let k = 1;
+			let newicon = 0;
+			// let it = current[0];
+			// Empty space
+			if (a[this.thread.y][this.thread.x][0] === 0 &&
+				b[this.thread.y][this.thread.x][0] === 0) {
+				// Right arrow
+				if (this.thread.x + 1 < this.constants.width &&
+					a[this.thread.y][this.thread.x + 1][0] == 1) {
+					newicon = 1;
+				}
+			}
+			if (a[this.thread.y][this.thread.x][0] === 1) {
+				// Right arrow
+				if (this.thread.x - 1 >= 0 &&
+					a[this.thread.y][this.thread.x - 1][0] !== 0) {
+					newicon = 1;
+				}
+				newicon = 1;
+			}
+			newicon = 2;
+			
+			let sum = [newicon, newicon, newicon, newicon];
+			return sum;
+		}, {
+			constants: {
+				width: width,
+				height: height,
+			},
+			output: [height, width],
+		});
+	const calculateLeft =
+		gpu.createKernel(function(a, b) {
+			let current = a[this.thread.y][this.thread.x];
+			let k = 1;
+			let newicon = 0;
+			let it = current[0];
+			// Empty space
+			if (it === 0 && b[this.thread.y][this.thread.x][0] === 0) {
+				// Left arrow
+				if (this.thread.x >= 1 &&
+					a[this.thread.y][this.thread.x - 1] == 2) {
+					newicon = 2;
+				}
+			}
+			let sum = [newicon, current[1], current[2], current[3]];
+			return sum;
+		}, {
+			constants: {
+				width: width,
+				height: height,
+			},
+			output: [height, width, 4],
+		});
+	
+	const empty = emptyMatrix();
+	const calculate = function(a) {
+		console.log("Calculating...");
+		const b = calculateRight(a, empty);
+		// const c = calculateLeft(a, b);
+		return b;
+		// return multiplyMatrix(a, a);
+	};
+
+	// // Up arrow
+	// if (this.thread.y < this.constants.height &&
+	// 	a[this.thread.y + 1][this.thread.x] == 3) {
+	// 	newicon = 3;
+	// }
+	// // Down arrow
+	// if (this.thread.y >= 1 &&
+	// 	a[this.thread.y - 1][this.thread.x] == 4) {
+	// 	newicon = 4;
+	// }
+	return calculate;
+};
+// const calculate = getCalculate(gpu);
+
+const transfer = function(matrix, array) {
+	for (let y = 0; y < height; y++) {
+		for (let x = 0; x < width; x++) {
+			array[(y * width + x) * 4 + 0] = matrix[y][x][0];
+			array[(y * width + x) * 4 + 1] = matrix[y][x][1];
+			array[(y * width + x) * 4 + 2] = matrix[y][x][2];
+			array[(y * width + x) * 4 + 3] = matrix[y][x][3];
+			// console.log(
+			// 	array[(y * width + x) * 4 + 0]);
+			// break;
+		}
+	}
 };
 
 const display = function(matrix, texture2) {
@@ -62,21 +183,14 @@ const display = function(matrix, texture2) {
 
 	// Convert 3d texture matrix to Float32Array data texture
 	const array = new Float32Array(matrix.length * matrix[0].length * 4);
-	for (let y = 0; y < matrix.length; y++) {
-		for (let x = 0; x < matrix[0].length; x++) {
-			array[(y * matrix[0].length + x) * 4 + 0] = matrix[y][x][0];
-			array[(y * matrix[0].length + x) * 4 + 1] = matrix[y][x][1];
-			array[(y * matrix[0].length + x) * 4 + 2] = matrix[y][x][2];
-			array[(y * matrix[0].length + x) * 4 + 3] = matrix[y][x][3];
-		}
-	}
+	const texture = new THREE.DataTexture(array, width, height, THREE.RGBAFormat, THREE.FloatType);
+	transfer(matrix, array);
 
 	// Create a three data texture from the matrix
-	const texture = new THREE.DataTexture(array, width, height, THREE.RGBAFormat, THREE.FloatType);
 	texture.needsUpdate = true;
 	texture.magFilter = THREE.NearestFilter;
 	texture.minFilter = THREE.NearestFilter;
-	texture2.magFilter = THREE.LinearMipMapLinearFilter;
+	texture2.magFilter = THREE.LinearFilter;
 	texture2.minFilter = THREE.LinearFilter;
 	texture2.wrapS = THREE.ClampToEdgeWrapping;
 	texture2.wrapT = THREE.ClampToEdgeWrapping;
@@ -133,6 +247,38 @@ const display = function(matrix, texture2) {
 			}
 		`
 	});
+
+	let m2 = matrix;
+	const gpuCanvas = document.createElement('canvas');
+	const gpu = new GPU({
+		canvas,
+		context: renderer.getContext()
+	});
+	calculate = getCalculate(gpu);
+
+	const outputKernel =
+		gpu.createKernel(function(a) {
+			// this.color(
+			// 	a[this.thread.y][this.thread.x][0],
+			// 	a[this.thread.y][this.thread.x][1],
+			// 	a[this.thread.y][this.thread.x][2],
+			// 	a[this.thread.y][this.thread.x][3]);
+			return a[this.thread.y][this.thread.x];
+		}).setOutput([height, width]).setPipeline(); //.setGraphical(true);
+
+	const calcNext = function() {
+		m2 = calculate(m2);
+		// const array2 = m2[0][0].buffer;
+		const array2 = outputKernel(m2);
+		console.log(array2);
+		const texture3 = new THREE.DataTexture(array2, width, height, THREE.RGBAFormat, THREE.FloatType);
+		// transfer(m2, array);
+		// console.log(m2);
+		texture3.needsUpdate = true;
+		material.uniforms.map = { value: texture3, needsUpdate: true };
+		// material.uniforms.map.needsUpdate = true;
+	};
+	setInterval(calcNext, 1000);
 
 	// const material = new THREE.MeshBasicMaterial({ map: texture });
 	// const geometry = new THREE.PlaneGeometry(width, height);
@@ -202,24 +348,6 @@ const display = function(matrix, texture2) {
 	};
 
 	animate();
-};
-
-const calculate = function() {
-	const gpu = new GPU();
-
-	const multiplyMatrix = gpu.createKernel(function(a, b) {
-		let sum = 0;
-		for (let i = 0; i < 512; i++) {
-			sum += a[this.thread.y][i] * b[i][this.thread.x];
-		}
-		return sum;
-	}).setOutput([512, 512])
-
-	const matrices = generateMatrices();
-	const out = multiplyMatrix(matrices[0], matrices[1]);
-
-	// console.log(out);
-	return out;
 };
 
 const loadImages = function() {
